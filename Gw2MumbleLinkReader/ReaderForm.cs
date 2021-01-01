@@ -82,7 +82,7 @@ namespace MumbleLinkReader
                 int mapId = this.apiMapDownloadQueue.Dequeue();
                 this.UpdateStatus($"Downloading API information for map {mapId}");
 
-                var map = await this.client.WebApi.V2.Maps.GetAsync(mapId);
+                var map = await this.client.WebApi.V2.Maps.GetAsync(mapId).ConfigureAwait(false);
                 this.maps[mapId] = map;
 
                 foreach (int floorId in map.Floors)
@@ -90,7 +90,7 @@ namespace MumbleLinkReader
                     if (!this.floors.ContainsKey(floorId))
                     {
                         this.UpdateStatus($"Downloading API information for floor {floorId}");
-                        var floor = await this.client.WebApi.V2.Continents[map.ContinentId].Floors.GetAsync(floorId);
+                        var floor = await this.client.WebApi.V2.Continents[map.ContinentId].Floors.GetAsync(floorId).ConfigureAwait(false);
                         this.floors[floorId] = floor;
                     }
                 }
