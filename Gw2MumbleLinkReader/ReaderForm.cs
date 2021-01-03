@@ -12,19 +12,19 @@ namespace MumbleLinkReader
 {
     public partial class ReaderForm : Form
     {
-        private readonly Gw2Client client = new Gw2Client();
+        private readonly Gw2Client client = new();
 
         private Thread? apiThread;
         private Thread? mumbleLoopThread;
         private bool stopRequested;
 
-        private readonly Queue<int> apiMapDownloadQueue = new Queue<int>();
-        private readonly HashSet<int> apiMapDownloadBusy = new HashSet<int>();
-        private readonly ConcurrentDictionary<int, Map> maps = new ConcurrentDictionary<int, Map>();
-        private readonly ConcurrentDictionary<int, ContinentFloor> floors = new ConcurrentDictionary<int, ContinentFloor>();
-        private readonly AutoResetEvent apiMapDownloadEvent = new AutoResetEvent(false);
+        private readonly Queue<int> apiMapDownloadQueue = new();
+        private readonly HashSet<int> apiMapDownloadBusy = new();
+        private readonly ConcurrentDictionary<int, Map> maps = new();
+        private readonly ConcurrentDictionary<(int, int), ContinentFloor> floors = new();
+        private readonly AutoResetEvent apiMapDownloadEvent = new(false);
 
-        private readonly System.Windows.Forms.Timer mClearStatusTimer = new System.Windows.Forms.Timer();
+        private readonly System.Windows.Forms.Timer mClearStatusTimer = new();
 
         public ReaderForm()
         {
@@ -87,11 +87,11 @@ namespace MumbleLinkReader
 
                 foreach (int floorId in map.Floors)
                 {
-                    if (!this.floors.ContainsKey(floorId))
+                    if (!this.floors.ContainsKey((map.ContinentId, floorId)))
                     {
-                        this.UpdateStatus($"Downloading API information for floor {floorId}");
+                        this.UpdateStatus($"Downloading API information for floor {floorId} on continent {map.ContinentId}");
                         var floor = await this.client.WebApi.V2.Continents[map.ContinentId].Floors.GetAsync(floorId).ConfigureAwait(false);
-                        this.floors[floorId] = floor;
+                        this.floors[(map.ContinentId, floorId)] = floor;
                     }
                 }
 
@@ -200,36 +200,37 @@ namespace MumbleLinkReader
                                 double closestPoiDistance = double.MaxValue;
                                 foreach (int floorId in map.Floors)
                                 {
-                                    if (this.floors.TryGetValue(floorId, out var floor))
+                                    if (!this.floors.TryGetValue((map.ContinentId, floorId), out var floor))
+                                        continue;
+
+                                    if (!floor.Regions.TryGetValue(map.RegionId, out var floorRegion))
+                                        continue;
+
+                                    if (!floorRegion.Maps.TryGetValue(map.Id, out var floorMap))
+                                        continue;
+
+                                    foreach (var (_, poi) in floorMap.PointsOfInterest)
                                     {
-                                        if (floor.Regions.TryGetValue(map.RegionId, out var floorRegion))
+                                        double distanceX = Math.Abs(continentPosition.X - poi.Coord.X);
+                                        double distanceZ = Math.Abs(continentPosition.Z - poi.Coord.Y);
+                                        double distance = Math.Sqrt(Math.Pow(distanceX, 2) + Math.Pow(distanceZ, 2));
+                                        switch (poi.Type.Value)
                                         {
-                                            if (floorRegion.Maps.TryGetValue(map.Id, out var floorMap))
-                                            {
-                                                foreach (var poi in floorMap.PointsOfInterest)
-                                                {
-                                                    double distanceX = Math.Abs(continentPosition.X - poi.Value.Coord.X);
-                                                    double distanceZ = Math.Abs(continentPosition.Z - poi.Value.Coord.Y);
-                                                    double distance = Math.Sqrt(Math.Pow(distanceX, 2) + Math.Pow(distanceZ, 2));
-                                                    if (poi.Value.Type.Value == PoiType.Waypoint && distance < closestWaypointDistance)
-                                                    {
-                                                        closestWaypointPosition = poi.Value.Coord;
-                                                        closestWaypointDistance = distance;
-                                                        closestWaypoint = poi.Value;
-                                                    }
-                                                    else if (poi.Value.Type.Value == PoiType.Landmark && distance < closestPoiDistance)
-                                                    {
-                                                        closestPoiPosition = poi.Value.Coord;
-                                                        closestPoiDistance = distance;
-                                                        closestPoi = poi.Value;
-                                                    }
-                                                }
-                                            }
+                                            case PoiType.Waypoint when distance < closestWaypointDistance:
+                                                closestWaypointPosition = poi.Coord;
+                                                closestWaypointDistance = distance;
+                                                closestWaypoint = poi;
+                                                break;
+                                            case PoiType.Landmark when distance < closestPoiDistance:
+                                                closestPoiPosition = poi.Coord;
+                                                closestPoiDistance = distance;
+                                                closestPoi = poi;
+                                                break;
                                         }
                                     }
                                 }
 
-                                if (closestWaypoint != null)
+                                if (closestWaypoint is not null)
                                 {
                                     this.textBoxWaypoint.Text = closestWaypoint.Name;
                                     int poiId = closestWaypoint.Id;
@@ -238,7 +239,7 @@ namespace MumbleLinkReader
                                     this.textBoxWaypointContinentPosition1.Text = closestWaypoint.Coord.X.ToString();
                                     this.textBoxWaypointContinentPosition2.Text = closestWaypoint.Coord.Y.ToString();
                                     double angle = Math.Atan2(continentPosition.Z - closestWaypointPosition.Y, continentPosition.X - closestWaypointPosition.X) * 180 / Math.PI;
-                                    this.textBoxWaypointDirection1.Text = this.GetDirectionFromAngle(angle).ToString();
+                                    this.textBoxWaypointDirection1.Text = GetDirectionFromAngle(angle).ToString();
                                     this.textBoxWaypointDirection2.Text = angle.ToString();
                                 }
                                 else
@@ -252,7 +253,7 @@ namespace MumbleLinkReader
                                     this.textBoxWaypointDirection2.Text = string.Empty;
                                 }
 
-                                if (closestPoi != null)
+                                if (closestPoi is not null)
                                 {
                                     this.textBoxPoi.Text = closestPoi.Name;
                                     int poiId = closestPoi.Id;
@@ -261,7 +262,7 @@ namespace MumbleLinkReader
                                     this.textBoxPoiContinentPosition1.Text = closestPoi.Coord.X.ToString();
                                     this.textBoxPoiContinentPosition2.Text = closestPoi.Coord.Y.ToString();
                                     double angle = Math.Atan2(continentPosition.Z - closestPoiPosition.Y, continentPosition.X - closestPoiPosition.X) * 180 / Math.PI;
-                                    this.textBoxPoiDirection1.Text = this.GetDirectionFromAngle(angle).ToString();
+                                    this.textBoxPoiDirection1.Text = GetDirectionFromAngle(angle).ToString();
                                     this.textBoxPoiDirection2.Text = angle.ToString();
                                 }
                                 else
@@ -288,43 +289,26 @@ namespace MumbleLinkReader
             } while (!this.stopRequested);
         }
 
-        private Direction GetDirectionFromAngle(double angle)
+        private static Direction GetDirectionFromAngle(double angle) => angle switch
         {
-            if (angle < -168.75)
-                return Direction.West;
-            else if (angle < -146.25)
-                return Direction.WestNorthWest;
-            else if (angle < -123.75)
-                return Direction.NorthWest;
-            else if (angle < -101.25)
-                return Direction.NorthNorthWest;
-            else if (angle < -78.75)
-                return Direction.North;
-            else if (angle < -56.25)
-                return Direction.NorthNorthEast;
-            else if (angle < -33.75)
-                return Direction.NorthEast;
-            else if (angle < -11.25)
-                return Direction.EastNorthEast;
-            else if (angle < 11.25)
-                return Direction.East;
-            else if (angle < 33.75)
-                return Direction.EastSouthEast;
-            else if (angle < 56.25)
-                return Direction.SouthEast;
-            else if (angle < 78.78)
-                return Direction.SouthSouthEast;
-            else if (angle < 101.25)
-                return Direction.South;
-            else if (angle < 123.75)
-                return Direction.SouthSouthWest;
-            else if (angle < 146.25)
-                return Direction.SouthWest;
-            else if (angle < 168.75)
-                return Direction.WestSouthWest;
-            else
-                return Direction.West;
-        }
+            < -168.75 => Direction.West,
+            < -146.25 => Direction.WestNorthWest,
+            < -123.75 => Direction.NorthWest,
+            < -101.25 => Direction.NorthNorthWest,
+            < -78.75 => Direction.North,
+            < -56.25 => Direction.NorthNorthEast,
+            < -33.75 => Direction.NorthEast,
+            < -11.25 => Direction.EastNorthEast,
+            < 11.25 => Direction.East,
+            < 33.75 => Direction.EastSouthEast,
+            < 56.25 => Direction.SouthEast,
+            < 78.78 => Direction.SouthSouthEast,
+            < 101.25 => Direction.South,
+            < 123.75 => Direction.SouthSouthWest,
+            < 146.25 => Direction.SouthWest,
+            < 168.75 => Direction.WestSouthWest,
+            _ => Direction.West
+        };
 
         private enum Direction
         {
